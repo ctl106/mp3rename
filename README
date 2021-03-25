@@ -1,0 +1,43 @@
+Mp3rename 0.6
+
+
+This program is for easily renaming all those bad named mp3 files.
+So that they can be recognised.
+
+Why?
+
+Well I got really tired of typing mv ... ... all the time.
+
+Installation:
+
+make
+make install should do the trick.
+
+Usage:
+
+It is recommended to first set your default look of the mp3 files.
+Help on this can be get by mp3rename -s help
+Just type mp3rename <filename> or mp3rename *.mp3
+And it should rename all the files according to their id3 tag.
+If there is no id3 tag given, it gives  a message that no id3 tag
+is present, if the option -v is given it will ask you for the artists
+name and song title for songs without id3tags.
+
+
+Disclaimer:
+
+I do not take responsebility for any damage caused by this program. 
+It shouldn't do any damage, but if it does, its your problem.
+
+
+Todo:
+
+Debugging.
+
+
+Known bugs:
+
+-
+
+Sander Janssen 		<janssen@rendo.dekooi.nl>
+
