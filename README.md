@@ -31,7 +31,6 @@ It shouldn't do any damage, but if it does, its your problem.
 
 
 Todo:
-* Fix inconsistent whitespace
 * Seperate functionality into its own function
     * `main` should only handle initializing the app
     * A new function should be created for reading in a file, if one is not provided via stdin
@@ -44,6 +43,7 @@ Todo:
 * Create a more modular and extensible format character system
 
 Done:
+* Fixed inconsistent whitespace (I hope!)
 
 
 Known bugs:
