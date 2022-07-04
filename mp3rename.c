@@ -1,5 +1,5 @@
-/*
- * mp3rename.c
+/**
+ * @file mp3rename.c
  *
  * Sander Janssen			<janssen@rendo.dekooi.nl>
  *
@@ -9,6 +9,7 @@
  *
  */
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -16,15 +17,65 @@
 #include <string.h>
 #include <signal.h>
 
+// should be set to contain the largest field of any tag type +1 to null terminate
+#define TITLE_MAX_LENGTH	61
+#define ARTIST_MAX_LENGTH	61
+#define ALBUM_MAX_LENGTH	61
+#define YEAR_MAX_LENGTH		5
+#define COMMENT_MAX_LENGTH	44
+#define TRACK_MAX_LENGTH	3
+#define GENRE_MAX_LENGTH	31
+#define SUBGENRE_MAX_LENGTH	21
+
+// Using arrays instead of pointers to try and avoid potential memory leaks
+typedef struct MediaTags {
+	char title[TITLE_MAX_LENGTH];
+	char artist[ARTIST_MAX_LENGTH];
+	char album[ALBUM_MAX_LENGTH];
+	char year[YEAR_MAX_LENGTH];
+	char comment[COMMENT_MAX_LENGTH];
+	char track[TRACK_MAX_LENGTH];
+	char genre[GENRE_MAX_LENGTH];
+	char subgenre[SUBGENRE_MAX_LENGTH];
+
+	// The size of the tag when applied to a media file.
+	size_t tagSize;
+
+	// Callback function for applying the tag to media.
+	size_t (*applyTag)(char *output, size_t outSize, char *media, size_t inSize, struct MediaTags mediaTags);
+} MediaTags;
+
+typedef struct Options {
+	bool verbose;
+	bool forced;
+	bool burn;
+	bool info;
+	bool all;
+} Options;
+
+
 void pad(char *string, int length);
 void display_help();
 void buildtag(char *buf, char *title, char *artist, char *album, char *year, char *comment, char *genre);
 void set_filename(int argc,char *argv[]);
+bool isMp3File(FILE *media);
+
+bool hasId3V1(FILE *media);
+int convertId3V1ToMediaTags(MediaTags *mediaTags, FILE *media);
+size_t setIdV3TagsInFile(char *output, size_t outSize, char *media, size_t inSize, MediaTags mediaTags);
+
 
 int main(int argc, char *argv[])
 {
+	Options options = {
+		.verbose = false,
+		.forced = false,
+		.burn = false,
+		.info = false,
+		.all = false
+	};
+
 	FILE *fp;
-	int verbose = 0, forced = 0, burn = 0, info = 0, all = 0;
 	unsigned char sig[2];
 	char genre[1];
 	char input_char;
@@ -46,10 +97,10 @@ int main(int argc, char *argv[])
 		switch (ch)
 		{
 			case 'v':											/* Verbose mode */
-				verbose = 1;
+				options.verbose = true;
 				break;
 			case 'f':											/* Always ask mode */
-				forced = 1;
+				options.forced = true;
 				break;
 			case 'h':											/* Display the help */
 				display_help();
@@ -58,13 +109,13 @@ int main(int argc, char *argv[])
 				set_filename(argc,argv);
 				exit(1);
 			case 'b':											/* Burn modus cut of at 32 chars */
-				burn = 1;
+				options.burn = true;
 				break;
 			case 'i':											/* Just the id3tag */
-				info = 1;
+				options.info = true;
 				break;
 			case 'a':											/* Ask everything */
-				all = 1;
+				options.all = true;
 				break;
 			default:											 /* If wrong option is given */
 				fprintf(stderr,"Mp3rename\n\nusage: [-vfh] [file ...]\n\n");
@@ -73,7 +124,7 @@ int main(int argc, char *argv[])
 
 	argv += optind;
 
-	if ( info == 1 && ( forced == 1 || verbose == 1))
+	if ( options.info && (options.forced || options.verbose))
 		{
 			printf("Info modus can not be used with other arguments.\n\n");
 			exit(1);
@@ -88,7 +139,7 @@ int main(int argc, char *argv[])
 	else	/* found! */
 		fgets(filenamelook, 100, fp);
 
-	if(burn != 1) /* If burn is on we will add the .mp3 later */
+	if(!options.burn) /* If burn is on we will add the .mp3 later */
 		strcat(filenamelook,".mp3"); /* add .mp3 so that the filename will be complete */
 
 	do {
@@ -103,17 +154,15 @@ int main(int argc, char *argv[])
 		}
 
 		/* Lets check if we have a real mp3 file */
-
-		fread(sig,sizeof(sig),1,fp);
-		sig[0] &= 0xff;
-		sig[1] &= 0xf0;
-		if(!((sig[0] == 0xff) && (sig[1] == 0xf0)))
+		if(!isMp3File(fp))
 		{
 			fprintf(stderr,"%s is not an MP3 file!\n",*argv);
 			fclose(fp);
 			++argv;
 			continue;
 		}
+
+		bool containsId3V1 = hasId3V1(fp);
 
 		/* Lets go to the beginning of the tag */
 		if ( fseek(fp, -128, SEEK_END ))
@@ -125,7 +174,7 @@ int main(int argc, char *argv[])
 
 		 /* Lets see if we already have a id3 tag */
 		 fread(fbuf,1,3,fp); fbuf[3] = '\0';
-		 if (!strcmp("TAG",fbuf) && !forced)
+		 if (containsId3V1 && !options.forced)
 		 {
 			 fseek(fp, -125, SEEK_END);
 			 fread(title,1,30,fp); title[30] = '\0';
@@ -138,32 +187,32 @@ int main(int argc, char *argv[])
 		 }
 		 else
 		 {
-			if (!strcmp("TAG",fbuf) ) /* go to the position to append one */
-				{
-					if(forced)
+			if (containsId3V1) /* go to the position to append one */
 			{
-				fseek(fp, -125, SEEK_END);
-				fread(title,1,30,fp); title[30] = '\0';
-				fread(artist,1,30,fp); artist[30] = '\0';
-				fread(album,1,30,fp); album[30] = '\0';
-				fread(year,1,4,fp); year[4] = '\0';
-				fread(comment,1,30,fp); comment[30] = '\0';
-				fread(genre,1,1,fp);
-			}
-					fseek(fp, -128, SEEK_END);
+				if(options.forced)
+				{
+					fseek(fp, -125, SEEK_END);
+					fread(title,1,30,fp); title[30] = '\0';
+					fread(artist,1,30,fp); artist[30] = '\0';
+					fread(album,1,30,fp); album[30] = '\0';
+					fread(year,1,4,fp); year[4] = '\0';
+					fread(comment,1,30,fp); comment[30] = '\0';
+					fread(genre,1,1,fp);
 				}
+				fseek(fp, -128, SEEK_END);
+			}
 			/*
 			Is this supposed to be a one line "else"? Lack of curly brackets implies so, but indenting contradicts that.
 			*/
 			else
 				fseek(fp, 0, SEEK_END);
-			if(verbose || forced)						/* Manual change of the name */
+			if(options.verbose || options.forced)						/* Manual change of the name */
 			{
-				if(verbose)
+				if(options.verbose)
 					printf("%s hasen't got a id3 tag. \n",*argv);
 				else
 					printf("%s:\n",*argv);
-				if(!all)
+				if(!options.all)
 				{
 				for( i=0 ; i!=(strlen(filenamelook)) ; i++)
 				{
@@ -293,7 +342,7 @@ int main(int argc, char *argv[])
 			}
 		}
 
-		if(info == 1)
+		if(options.info)
 		{
 			printf("Artist : %s\n",artist);
 			printf("Title : %s\n",title);
@@ -425,7 +474,7 @@ int main(int argc, char *argv[])
 		}
 
 		/* Lets rename the file */
-		if(burn == 1) /* If burn is on the size */
+		if(options.burn) /* If burn is on the size */
 		{					/* shouldn't be bigger than 32 chars including the .mp3 */
 			strncpy(burnname,newfilename,sizeof(burnname)-1);
 			sprintf(nieuw,"%s%s.mp3",dir,burnname);
@@ -531,6 +580,114 @@ void set_filename(int argc,char *argv[])
 	fclose(fp);
 }
 
+/** @brief Checks if the provided file is an mp3 or not.
+ *
+ * @param media File being checked
+ * @return true if File is an mp3, else false
+ *
+ */
+bool isMp3File(FILE *media){
+	char sig[2];
+
+	fseek(media, 0, SEEK_SET);
+	fread(sig, sizeof(sig), 1, media);
+
+	sig[0] &= 0xff;
+	sig[1] &= 0xf0;
+	return (sig[0] == 0xff) && (sig[1] == 0xf0);
+}
 
 
+/** TAG CONVERSION FUNCTIONS **/
 
+static const char ID3_V1_HEADER[]		= "TAG";
+static const char ID3_ENHANCED_HEADER[]	= "TAG+";
+static const char ID3_V1_2_HEADER[]		= "EXT";
+
+static const ssize_t ID3_V1_HEADER_OFFSET = -128;
+
+static const size_t ID3_V1_HEADER_SIZE = 3;
+static const size_t ID3_V1_TITLE_SIZE = 30;
+static const size_t ID3_V1_ARTIST_SIZE = 30;
+static const size_t ID3_V1_ALBUM_SIZE = 30;
+static const size_t ID3_V1_YEAR_SIZE = 4;
+static const size_t ID3_V1_COMMENT_SIZE = 30;
+static const size_t ID3_V1_GENRE_SIZE = 1;
+
+
+/** @brief Checks if the provided char array contains an ID3 V1 tag.
+ *
+ * @param media The file to search for the tag in
+ * @return true if an ID3 V1 header was found, false otherwise
+ *
+ */
+bool hasId3V1(FILE *media) {
+	if (fseek(media, ID3_V1_HEADER_OFFSET, SEEK_END)) {
+		return false;
+	}
+
+	char readHeader[ID3_V1_HEADER_SIZE];
+	fread(readHeader, sizeof(char), ID3_V1_HEADER_SIZE, media);
+
+	return 0 == strncmp(ID3_V1_HEADER, readHeader, sizeof(ID3_V1_HEADER));
+}
+
+
+/** @brief Populates a MediaTags struct from the contents of a media file.
+ *
+ * @param mediaTags Pointer to the MediaTags struct to populate
+ * @param media The file to pull the tag data from
+ * @return 0 if completed successfully, else non-zero
+ *
+ */
+int convertId3V1ToMediaTags(MediaTags *mediaTags, FILE *media) {
+	int status = 0;
+	if (status = fseek(media, ID3_V1_HEADER_OFFSET, SEEK_END)) {
+		return status;
+	}
+
+	fread(NULL, sizeof(char), ID3_V1_HEADER_SIZE, media);
+
+	fread(mediaTags->title, sizeof(char), ID3_V1_TITLE_SIZE, media);
+	mediaTags->title[ID3_V1_TITLE_SIZE] = '\0';
+
+	fread(mediaTags->artist, sizeof(char), ID3_V1_ARTIST_SIZE, media);
+	mediaTags->artist[ID3_V1_ARTIST_SIZE] = '\0';
+
+	fread(mediaTags->album, sizeof(char), ID3_V1_ALBUM_SIZE, media);
+	mediaTags->album[ID3_V1_ALBUM_SIZE] = '\0';
+
+	fread(mediaTags->year, sizeof(char), ID3_V1_YEAR_SIZE, media);
+	mediaTags->year[ID3_V1_YEAR_SIZE] = '\0';
+
+	fread(mediaTags->comment, sizeof(char), ID3_V1_COMMENT_SIZE, media);
+	mediaTags->comment[ID3_V1_COMMENT_SIZE] = '\0';
+
+	fread(mediaTags->genre, sizeof(char), ID3_V1_GENRE_SIZE, media);
+	mediaTags->genre[ID3_V1_GENRE_SIZE] = '\0';
+
+	// Check for presence of a track number. If comment[28] is 0x00, then comment[29] represents a track number
+	if (mediaTags->comment[28] == '\x00') {
+		mediaTags->comment[28] = '\0';	// probably unnecessary, but Idk if '\0' is guaranteed to be 0x00
+		sscanf(&(mediaTags->comment[29]), "%d", mediaTags->track);
+	}
+
+	return status;
+}
+
+
+/** @brief Inserts data from a MediaTags struct into an array representing a media file.
+ * Caller should use "tagSize" member of struct to correctly size the output buffer.
+ * If output buffer is too small, no output is generated.
+ *
+ * @param output Buffer to output the tagged media contents into
+ * @param outSize Size of the output buffer.
+ * @param media Buffer to read the media contents from
+ * @param inSize Size of the input buffer
+ * @param mediaTags MediaTags struct to read tag data from
+ * @return The size of the generated output, not including the null terminator, or 0 if output could not be generated.
+ *
+ */
+size_t setIdV3TagsInFile(char *output, size_t outSize, char *media, size_t inSize, MediaTags mediaTags) {
+	return 0;
+}

@@ -1,0 +1,13 @@
+// IDE project files
+*.cbp
+
+// Compilation directories
+bin/*
+obj/*
+
+// Other automatically generated directories
+doxygen/*
+
+// Binary files
+*.o
+*.exe
