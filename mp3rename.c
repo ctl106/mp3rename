@@ -55,12 +55,13 @@ typedef struct Options {
 
 
 int parseArguments(Options *options, int argc, char *argv[]);
-void verifyOptions(Options *options);
+void verifyOptions(Options options);
 
 void pad(char *string, int length);
 void display_help();
 void buildtag(char *buf, char *title, char *artist, char *album, char *year, char *comment, char *genre);
 void set_filename(int argc,char *argv[]);
+size_t dirFromPath(char *directory, size_t n, char *fullPath);
 bool isMp3File(FILE *media);
 
 bool hasId3V1(FILE *media);
@@ -78,14 +79,12 @@ int main(int argc, char *argv[])
 		.all = false
 	};
 
-	FILE *fp;
-	unsigned char sig[2];
-	char genre[1];
+	FILE *configFile;
+	FILE *mediaFile;
 	char input_char;
-	int i=0,plaatsen = 0;
-	int ch,p;
+	size_t position;
 	char filenamelook[100];
-	char str[100];
+	char configFileName[100];
 
 
 	if (argc < 2 ) /* If nothing is given */
@@ -99,26 +98,28 @@ int main(int argc, char *argv[])
 	argv += argsIndex;
 	verifyOptions(options);
 
-	sprintf(str,"%s/.mp3rename",getenv("HOME")); /* Lets get the home dir */
+	sprintf(configFileName,"%s/.mp3rename",getenv("HOME")); /* Lets get the home dir */
 
-	if ( !( fp=fopen(str,"r") ) ) /* if we don't find our config file */
-		{
-		 sprintf(filenamelook,"(&a)-&t");
-		 printf("Using default look, please use the -s option to set your own look\n");
-		}
+	if (!(configFile = fopen(configFileName,"r"))) /* if we don't find our config file */
+	{
+		sprintf(filenamelook,"(&a)-&t");
+		printf("Using default look, please use the -s option to set your own look\n");
+	}
 	else	/* found! */
-		fgets(filenamelook, 100, fp);
+	{
+		fgets(filenamelook, 100, configFile);
+		fclose(configFile);
+	}
 
 	if(!options.burn) /* If burn is on we will add the .mp3 later */
 		strcat(filenamelook,".mp3"); /* add .mp3 so that the filename will be complete */
 
 	do {
-		char title[31]="", artist[31]="", album[31]="", year[5]="", comment[31]="";
-		char fbuf[4], newfilename[160]="", nieuw[150]="", dir[150]="", dirsource[200];
+		char title[31]="", artist[31]="", album[31]="", year[5]="", comment[31]="", genre[1];
+		char newfilename[160]="", newFilePath[150]="", dir[150]="";
 		char fullline[228]="", burnname[29]="";
-		plaatsen = 0;
 
-		if ( !( fp=fopen(*argv,"rb+") ) )		/* If the file doesn exist */
+		if ( !( mediaFile=fopen(*argv,"rb+") ) )		/* If the file doesn exist */
 		{
 			perror("Error opening file");
 			++argv;												 /* Prepare for the next file */
@@ -126,58 +127,49 @@ int main(int argc, char *argv[])
 		}
 
 		/* Lets check if we have a real mp3 file */
-		if(!isMp3File(fp))
+		if(!isMp3File(mediaFile))
 		{
 			fprintf(stderr,"%s is not an MP3 file!\n",*argv);
-			fclose(fp);
+			fclose(mediaFile);
 			++argv;
 			continue;
 		}
 
-		bool containsId3V1 = hasId3V1(fp);
+		bool containsId3V1 = hasId3V1(mediaFile);
 
-		/* Lets go to the beginning of the tag */
-		if ( fseek(fp, -128, SEEK_END ))
+		/* Lets see if we already have a id3 tag */
+		if (containsId3V1 && !options.forced)
 		{
-			fclose(fp);
-			++argv;
-			continue;
+			fseek(mediaFile, -125, SEEK_END);
+			fread(title,1,30,mediaFile); title[30] = '\0';
+			fread(artist,1,30,mediaFile); artist[30] = '\0';
+			fread(album,1,30,mediaFile); album[30] = '\0';
+			fread(year,1,4,mediaFile); year[4] = '\0';
+			fread(comment,1,30,mediaFile); comment[30] = '\0';
+			fread(genre,1,1,mediaFile);
+			fseek(mediaFile, -128, SEEK_END); /* back to the beginning of the tag */
 		}
-
-		 /* Lets see if we already have a id3 tag */
-		 fread(fbuf,1,3,fp); fbuf[3] = '\0';
-		 if (containsId3V1 && !options.forced)
-		 {
-			 fseek(fp, -125, SEEK_END);
-			 fread(title,1,30,fp); title[30] = '\0';
-			 fread(artist,1,30,fp); artist[30] = '\0';
-			 fread(album,1,30,fp); album[30] = '\0';
-			 fread(year,1,4,fp); year[4] = '\0';
-			 fread(comment,1,30,fp); comment[30] = '\0';
-			 fread(genre,1,1,fp);
-			 fseek(fp, -128, SEEK_END); /* back to the beginning of the tag */
-		 }
-		 else
-		 {
+		else
+		{
 			if (containsId3V1) /* go to the position to append one */
 			{
 				if(options.forced)
 				{
-					fseek(fp, -125, SEEK_END);
-					fread(title,1,30,fp); title[30] = '\0';
-					fread(artist,1,30,fp); artist[30] = '\0';
-					fread(album,1,30,fp); album[30] = '\0';
-					fread(year,1,4,fp); year[4] = '\0';
-					fread(comment,1,30,fp); comment[30] = '\0';
-					fread(genre,1,1,fp);
+					fseek(mediaFile, -125, SEEK_END);
+					fread(title,1,30,mediaFile); title[30] = '\0';
+					fread(artist,1,30,mediaFile); artist[30] = '\0';
+					fread(album,1,30,mediaFile); album[30] = '\0';
+					fread(year,1,4,mediaFile); year[4] = '\0';
+					fread(comment,1,30,mediaFile); comment[30] = '\0';
+					fread(genre,1,1,mediaFile);
 				}
-				fseek(fp, -128, SEEK_END);
+				fseek(mediaFile, -128, SEEK_END);
 			}
-			/*
-			Is this supposed to be a one line "else"? Lack of curly brackets implies so, but indenting contradicts that.
-			*/
-			else
-				fseek(fp, 0, SEEK_END);
+
+			else {
+				fseek(mediaFile, 0, SEEK_END);
+			}
+
 			if(options.verbose || options.forced)						/* Manual change of the name */
 			{
 				if(options.verbose)
@@ -186,10 +178,10 @@ int main(int argc, char *argv[])
 					printf("%s:\n",*argv);
 				if(!options.all)
 				{
-				for( i=0 ; i!=(strlen(filenamelook)) ; i++)
-				{
-					p = 0;
-					if(filenamelook[i] == '&')
+					for(int i=0 ; i!=(strlen(filenamelook)) ; i++)
+					{
+						position = 0;
+						if(filenamelook[i] == '&')
 						{
 							switch(filenamelook[i+1])
 							{
@@ -198,11 +190,11 @@ int main(int argc, char *argv[])
 									do	/* Lets get the artist */
 									{
 										input_char = getchar();
-										if (input_char != '\n' && p == 0)
-							strcpy(artist,"");
+										if (input_char != '\n' && position == 0)
+											strcpy(artist,"");
 										if (input_char != '\n' && input_char != EOF )
-							sprintf(artist,"%s%c",artist,input_char);
-										p++;
+											sprintf(artist,"%s%c",artist,input_char);
+										position++;
 									} while (input_char != '\n');
 									i++;
 									break;
@@ -212,11 +204,11 @@ int main(int argc, char *argv[])
 									do	/* Lets get the song title */
 									{
 										input_char = getchar();
-										if (input_char != '\n' && p == 0)
-							strcpy(title,"");
+										if (input_char != '\n' && position == 0)
+											strcpy(title,"");
 										if (input_char != '\n' && input_char != EOF)
 											sprintf(title,"%s%c",title,input_char);
-										p++;
+										position++;
 									} while (input_char != '\n');
 									i++;
 									break;
@@ -226,11 +218,11 @@ int main(int argc, char *argv[])
 									do	/* Lets get the album */
 									{
 										input_char = getchar();
-										if (input_char != '\n' && p == 0)
-							strcpy(album,"");
+										if (input_char != '\n' && position == 0)
+											strcpy(album,"");
 										if (input_char != '\n' && input_char != EOF)
-							sprintf(album,"%s%c",album,input_char);
-											p++;
+											sprintf(album,"%s%c",album,input_char);
+										position++;
 									} while (input_char != '\n');
 									i++;
 									break;
@@ -240,11 +232,11 @@ int main(int argc, char *argv[])
 									do	/* Lets get the year */
 									{
 										input_char = getchar();
-										if (input_char != '\n' && p == 0)
-										strcpy(year,"");
+										if (input_char != '\n' && position == 0)
+											strcpy(year,"");
 										if (input_char != '\n' && input_char != EOF)
-							sprintf(year,"%s%c",year,input_char);
-										p++;
+											sprintf(year,"%s%c",year,input_char);
+										position++;
 									} while (input_char != '\n');
 									i++;
 									break;
@@ -258,57 +250,59 @@ int main(int argc, char *argv[])
 				}
 				else
 				{
-					p = 0;
+					position = 0;
 					printf("Please enter the artist's name.\n");
 					do	/* Lets get the artist */
 					{
 						input_char = getchar();
-						if (input_char != '\n' && p == 0)
+						if (input_char != '\n' && position == 0)
 							strcpy(artist,"");
 						if (input_char != '\n' && input_char != EOF )
 							sprintf(artist,"%s%c",artist,input_char);
-						p++;
+						position++;
 					} while (input_char != '\n');
-					p = 0;
+
+					position = 0;
 					printf("Please enter the title.\n");
 					do	/* Lets get the song title */
 					{
 						input_char = getchar();
-						if (input_char != '\n' && p == 0)
+						if (input_char != '\n' && position == 0)
 							strcpy(title,"");
 						if (input_char != '\n' && input_char != EOF)
 							sprintf(title,"%s%c",title,input_char);
-						p++;
+						position++;
 					} while (input_char != '\n');
-					i++;
-					p = 0;
+
+					position = 0;
 					printf("Please enter the album.\n");
 					do	/* Lets get the album */
 					{
 						input_char = getchar();
-						if (input_char != '\n' && p == 0)
+						if (input_char != '\n' && position == 0)
 							strcpy(album,"");
 						if (input_char != '\n' && input_char != EOF)
 							sprintf(album,"%s%c",album,input_char);
-						p++;
+						position++;
 					} while (input_char != '\n');
-					p = 0;
+
+					position = 0;
 					printf("Please enter the year.\n");
 					do	/* Lets get the year */
 					{
 						input_char = getchar();
-						if (input_char != '\n' && p == 0)
+						if (input_char != '\n' && position == 0)
 							strcpy(year,"");
 						if (input_char != '\n' && input_char != EOF)
 							sprintf(year,"%s%c",year,input_char);
-						p++;
+						position++;
 					} while (input_char != '\n');
 				}
 			}
 			else	 /* If we aren't in verbose or forced mode */
 			{
 				printf("%s hasen't got a id3 tag\n",*argv);
-				fclose(fp);
+				fclose(mediaFile);
 				++argv;
 				continue;
 			}
@@ -325,6 +319,7 @@ int main(int argc, char *argv[])
 		}
 
 		/* Remove trailing spaces */
+		int i;
 		i=strlen(artist)-1;
 		while (i && artist[i]==' ')
 		{
@@ -353,7 +348,7 @@ int main(int argc, char *argv[])
 
 		/* We go through the filenamelook until we find a &x combination
 			 then we replace the &x with album/title/year/artis						*/
-		for( i=0 ; i!=(strlen(filenamelook)) ; i++)
+		for(int i=0 ; i!=(strlen(filenamelook)) ; i++)
 		{
 			if(filenamelook[i] == '&')
 			{
@@ -398,28 +393,18 @@ int main(int argc, char *argv[])
 		}
 
 		/* Lets find out what directory we are working in */
-		sprintf(dirsource,"%s",*argv);
-		i=strlen(dirsource)+1;
-		while (i>-1)
-		{
-			if(dirsource[i] == '/')
-				plaatsen = 1;
-			if(plaatsen)
-				dir[i] = dirsource[i];
-			else
-				dir[i] = '\0';
-				i--;
-		}
+		int dirSize = sizeof(dir)/sizeof(dir[0]);
+		dirFromPath(dir, dirSize, *argv);
 
 		/* Build the new tag from the new names */
 
 		buildtag(fullline,title,artist,album,year,comment,genre);
-		fwrite(fullline,1,128,fp);
+		fwrite(fullline,1,128,mediaFile);
 
-		fclose(fp);
+		fclose(mediaFile);
 
 		/* Lets catch illegal characters */
-		for (i=0; i < strlen(newfilename); i++)
+		for (int i=0; i < strlen(newfilename); i++)
 		{
 			switch (newfilename[i])
 			{
@@ -449,13 +434,13 @@ int main(int argc, char *argv[])
 		if(options.burn) /* If burn is on the size */
 		{					/* shouldn't be bigger than 32 chars including the .mp3 */
 			strncpy(burnname,newfilename,sizeof(burnname)-1);
-			sprintf(nieuw,"%s%s.mp3",dir,burnname);
+			sprintf(newFilePath,"%s%s.mp3",dir,burnname);
 		}
 		else
 		{
-			sprintf(nieuw,"%s%s",dir,newfilename);
+			sprintf(newFilePath,"%s%s",dir,newfilename);
 		}
-		if(rename(*argv,nieuw))
+		if(rename(*argv,newFilePath))
 			printf("Error renaming %s\n",*argv);
 
 		++argv;	 /* Prepare for the next */
@@ -514,7 +499,7 @@ int parseArguments(Options *options, int argc, char *argv[]) {
  * @param options Options selected by user
  *
  */
-void verifyOptions(Options *options) {
+void verifyOptions(Options options) {
 	if ( options.info && (options.forced || options.verbose))
 	{
 		printf("Info modus can not be used with other arguments.\n\n");
@@ -611,6 +596,34 @@ void set_filename(int argc,char *argv[])
 	fclose(fp);
 }
 
+
+/** @brief Copies the directory excluding the last element, assumed to be a file.
+ *
+ * @param directory Output buffer to store the directory in
+ * @param n Maximum size of directory, including null terminator
+ * @param fullPath Input buffer containing the full path
+ * @return size of directory written, not including null terminator
+ *
+ */
+size_t dirFromPath(char *directory, size_t n, char *fullPath) {
+	int dirSize = n - 1;
+
+	strncpy(directory, fullPath, dirSize);
+	for (; dirSize > 0; dirSize--) {
+		if (directory[dirSize] == '/') {
+			directory[dirSize] = '\0';
+			break;
+		}
+	}
+	if (dirSize == 0) {
+		directory[dirSize] = '\0';
+	}
+
+
+	return dirSize;
+}
+
+
 /** @brief Checks if the provided file is an mp3 or not.
  *
  * @param media File being checked
@@ -673,7 +686,7 @@ bool hasId3V1(FILE *media) {
  */
 int convertId3V1ToMediaTags(MediaTags *mediaTags, FILE *media) {
 	int status = 0;
-	if (status = fseek(media, ID3_V1_HEADER_OFFSET, SEEK_END)) {
+	if ((status = fseek(media, ID3_V1_HEADER_OFFSET, SEEK_END))) {
 		return status;
 	}
 
@@ -700,7 +713,8 @@ int convertId3V1ToMediaTags(MediaTags *mediaTags, FILE *media) {
 	// Check for presence of a track number. If comment[28] is 0x00, then comment[29] represents a track number
 	if (mediaTags->comment[28] == '\x00') {
 		mediaTags->comment[28] = '\0';	// probably unnecessary, but Idk if '\0' is guaranteed to be 0x00
-		sscanf(&(mediaTags->comment[29]), "%d", mediaTags->track);
+		long int track = strtol(&(mediaTags->comment[29]), NULL, 16);
+		sprintf(mediaTags->track, "%ld", track);
 	}
 
 	return status;
