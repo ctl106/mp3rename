@@ -54,6 +54,9 @@ typedef struct Options {
 } Options;
 
 
+int parseArguments(Options *options, int argc, char *argv[]);
+void verifyOptions(Options *options);
+
 void pad(char *string, int length);
 void display_help();
 void buildtag(char *buf, char *title, char *artist, char *album, char *year, char *comment, char *genre);
@@ -92,43 +95,10 @@ int main(int argc, char *argv[])
 	}
 
 	/* Lets checkout the options */
+	int argsIndex = parseArguments(&options, argc, argv);
+	argv += argsIndex;
+	verifyOptions(options);
 
-	while ((ch = getopt(argc, argv, "vfhsbia")) != -1)
-		switch (ch)
-		{
-			case 'v':											/* Verbose mode */
-				options.verbose = true;
-				break;
-			case 'f':											/* Always ask mode */
-				options.forced = true;
-				break;
-			case 'h':											/* Display the help */
-				display_help();
-				exit(1);
-			case 's':											/* Set the default look */
-				set_filename(argc,argv);
-				exit(1);
-			case 'b':											/* Burn modus cut of at 32 chars */
-				options.burn = true;
-				break;
-			case 'i':											/* Just the id3tag */
-				options.info = true;
-				break;
-			case 'a':											/* Ask everything */
-				options.all = true;
-				break;
-			default:											 /* If wrong option is given */
-				fprintf(stderr,"Mp3rename\n\nusage: [-vfh] [file ...]\n\n");
-				exit(1);
-		}
-
-	argv += optind;
-
-	if ( options.info && (options.forced || options.verbose))
-		{
-			printf("Info modus can not be used with other arguments.\n\n");
-			exit(1);
-		}
 	sprintf(str,"%s/.mp3rename",getenv("HOME")); /* Lets get the home dir */
 
 	if ( !( fp=fopen(str,"r") ) ) /* if we don't find our config file */
@@ -143,7 +113,9 @@ int main(int argc, char *argv[])
 		strcat(filenamelook,".mp3"); /* add .mp3 so that the filename will be complete */
 
 	do {
-		char title[31]="", artist[31]="", album[31]="", year[5]="", comment[31]="", fbuf[4], newfilename[160]="",nieuw[150]="",dir[150]="",dirsource[200],fullline[228]="", burnname[29]="";
+		char title[31]="", artist[31]="", album[31]="", year[5]="", comment[31]="";
+		char fbuf[4], newfilename[160]="", nieuw[150]="", dir[150]="", dirsource[200];
+		char fullline[228]="", burnname[29]="";
 		plaatsen = 0;
 
 		if ( !( fp=fopen(*argv,"rb+") ) )		/* If the file doesn exist */
@@ -491,6 +463,65 @@ int main(int argc, char *argv[])
 
 	return 0;
 }
+
+
+/** @brief Parses the command line arguments into an Options struct
+ *
+ * @param options Struct to store the options into
+ * @param argc Size of argv
+ * @param argv[] Array of command line arguments
+ * @return Index of next element in argv
+ *
+ */
+int parseArguments(Options *options, int argc, char *argv[]) {
+	char option;
+	while ((option = getopt(argc, argv, "vfhsbia")) != -1)
+	switch (option)
+	{
+		case 'v':											/* Verbose mode */
+			options->verbose = true;
+			break;
+		case 'f':											/* Always ask mode */
+			options->forced = true;
+			break;
+		case 'h':											/* Display the help */
+			display_help();
+			exit(1);
+		case 's':											/* Set the default look */
+			set_filename(argc,argv);
+			exit(1);
+		case 'b':											/* Burn modus cut of at 32 chars */
+			options->burn = true;
+			break;
+		case 'i':											/* Just the id3tag */
+			options->info = true;
+			break;
+		case 'a':											/* Ask everything */
+			options->all = true;
+			break;
+		default:											 /* If wrong option is given */
+			fprintf(stderr,"Mp3rename\n\nusage: [-vfh] [file ...]\n\n");
+			exit(1);
+	}
+
+	return optind;
+}
+
+
+/** @brief Checks whether the selected options are compatible with each other.
+ * If options are not compatible, a message is printed, and execution is exited with a non-zero status.
+ *
+ * @param options Options selected by user
+ *
+ */
+void verifyOptions(Options *options) {
+	if ( options.info && (options.forced || options.verbose))
+	{
+		printf("Info modus can not be used with other arguments.\n\n");
+		exit(1);
+	}
+}
+
 
 void buildtag(char *buf, char *title, char *artist, char *album, char *year, char *comment, char *genre)
 {

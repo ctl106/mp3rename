@@ -35,26 +35,10 @@ Todo:
     * `main` should only handle initializing the app
     * A new function should be created for reading in a file, if one is not provided via stdin
     * A new function should be created to contain the renaming functionality
-* Change flag variables to use `bool` instead of `int`
-* Move flags set from command line arguments to a struct
 * Create constant variables to replace magic numbers
 * Move parsing of IDE3 V1 tags to its own file
 * Add capability for detecting different metadata tag types
 * Create a more modular and extensible format character system
-
-Done:
-* Fixed inconsistent whitespace (I hope!)
-* Added Doxygen formatted comments to new functions for easy documentation generation
-* Added structs
-	* `MediaTags` to hold tag contents
-	* `Options` to dictate behavior of application
-* Replaced references to option ints with references to an `Options` struct
-* Added functions
-	* `hasId3V1()` checkc for existence of ID3 V1 tags in provided file
-	* `convertId3V1ToMediaTags()` Fills a `MediaTags` struct from provided file
-		* DOES NOT check for existence of header so that the "force" option can still work
-	* `setIdV3TagsInFile()` Generates a tag from the provided `MediaTags` and inserts it into the file
-	* `isMp3File()` Checks whether or not the provided file is an MP3
 
 
 Known bugs:
