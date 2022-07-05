@@ -9,6 +9,7 @@
 #define MEDIATAGS_H_INCLUDED
 
 
+#include <stdio.h>
 
 // should be set to contain the largest field of any tag type +1 to null terminate
 #define MEDIATAGS_TITLE_MAX_LENGTH		61

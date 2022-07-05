@@ -1,6 +1,7 @@
-// IDE project files
+// IDE and editor files and directories
 *.cbp
 *.depend
+.vscode/*
 
 // Compilation directories
 bin/*

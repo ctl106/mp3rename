@@ -1,17 +1,32 @@
-PROG =  mp3rename
-SRCS =  mp3rename.c 
-OBJS =  mp3rename.o 
-RM = /bin/rm
+NAME =  mp3rename
 
-all: mp3rename
+SRCDIR = src
+OBJDIR = obj
+BINDIR = bin
 
-mp3rename: $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $(OBJS) 
+BINARY = $(BINDIR)/$(NAME)
+HEADERS = $(wildcard $(SRCDIR)/*.h)
+SOURCES = $(wildcard $(SRCDIR)/*.c)
+OBJECTS = $(patsubst $(SRCDIR)/%.c, $(OBJDIR)/%.o, $(SOURCES))
+#RM = /bin/rm
+
+.PHONY: all clean install
+
+all: $(NAME)
+
+$(OBJDIR)/%.o: $(SRCDIR)/%.c $(HEADERS)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(NAME): $(OBJECTS)
+	$(CC) $(CFLAGS) -o $(BINARY) $(OBJECTS)
+
+$(BINARY):
+	$(NAME)
 
 clean:
-	$(RM) -f $(OBJS) $(PROG) *~ *core
+	$(RM) -f $(OBJECTS) $(BINARY) *~ *core
 
 install:
-	$(INSTALL) -c mp3rename $(PREFIX)/bin/mp3rename
-	$(INSTALL) -c mp3rename.1.gz $(PREFIX)/man/man1/
+	$(INSTALL) -c $(BINARY) $(PREFIX)/bin/$(NAME)
+	$(INSTALL) -c $(BINARY).1.gz $(PREFIX)/man/man1/
     
