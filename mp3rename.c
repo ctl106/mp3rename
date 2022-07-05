@@ -27,7 +27,6 @@
 #define GENRE_MAX_LENGTH	31
 #define SUBGENRE_MAX_LENGTH	21
 
-// Using arrays instead of pointers to try and avoid potential memory leaks
 typedef struct MediaTags {
 	char title[TITLE_MAX_LENGTH];
 	char artist[ARTIST_MAX_LENGTH];
@@ -42,9 +41,10 @@ typedef struct MediaTags {
 	size_t tagSize;
 
 	// Callback function for applying the tag to media.
-	size_t (*applyTag)(char *output, size_t outSize, char *media, size_t inSize, struct MediaTags mediaTags);
+	int (*applyTag)(FILE *media, struct MediaTags mediaTags);
 } MediaTags;
 
+#define OPTIONS_INITIALIZER	{.verbose = false, .forced = false, .burn = false, .info = false, .all = false}
 typedef struct Options {
 	bool verbose;
 	bool forced;
@@ -66,18 +66,13 @@ bool isMp3File(FILE *media);
 
 bool hasId3V1(FILE *media);
 int convertId3V1ToMediaTags(MediaTags *mediaTags, FILE *media);
-size_t setIdV3TagsInFile(char *output, size_t outSize, char *media, size_t inSize, MediaTags mediaTags);
+int setIdV3TagsInFile(FILE *media, MediaTags mediaTags);
 
 
 int main(int argc, char *argv[])
 {
-	Options options = {
-		.verbose = false,
-		.forced = false,
-		.burn = false,
-		.info = false,
-		.all = false
-	};
+	Options options = OPTIONS_INITIALIZER;
+	MediaTags mediaTags = {};
 
 	FILE *configFile;
 	FILE *mediaFile;
@@ -115,9 +110,9 @@ int main(int argc, char *argv[])
 		strcat(filenamelook,".mp3"); /* add .mp3 so that the filename will be complete */
 
 	do {
-		char title[31]="", artist[31]="", album[31]="", year[5]="", comment[31]="", genre[1];
+		//char title[31]="", artist[31]="", album[31]="", year[5]="", comment[31]="", genre[1];
 		char newfilename[160]="", newFilePath[150]="", dir[150]="";
-		char fullline[228]="", burnname[29]="";
+		char burnname[29]="";
 
 		if ( !( mediaFile=fopen(*argv,"rb+") ) )		/* If the file doesn exist */
 		{
@@ -135,214 +130,188 @@ int main(int argc, char *argv[])
 			continue;
 		}
 
-		bool containsId3V1 = hasId3V1(mediaFile);
 
 		/* Lets see if we already have a id3 tag */
-		if (containsId3V1 && !options.forced)
-		{
-			fseek(mediaFile, -125, SEEK_END);
-			fread(title,1,30,mediaFile); title[30] = '\0';
-			fread(artist,1,30,mediaFile); artist[30] = '\0';
-			fread(album,1,30,mediaFile); album[30] = '\0';
-			fread(year,1,4,mediaFile); year[4] = '\0';
-			fread(comment,1,30,mediaFile); comment[30] = '\0';
-			fread(genre,1,1,mediaFile);
-			fseek(mediaFile, -128, SEEK_END); /* back to the beginning of the tag */
-		}
-		else
-		{
-			if (containsId3V1) /* go to the position to append one */
-			{
-				if(options.forced)
-				{
-					fseek(mediaFile, -125, SEEK_END);
-					fread(title,1,30,mediaFile); title[30] = '\0';
-					fread(artist,1,30,mediaFile); artist[30] = '\0';
-					fread(album,1,30,mediaFile); album[30] = '\0';
-					fread(year,1,4,mediaFile); year[4] = '\0';
-					fread(comment,1,30,mediaFile); comment[30] = '\0';
-					fread(genre,1,1,mediaFile);
-				}
-				fseek(mediaFile, -128, SEEK_END);
-			}
+		bool containsId3V1 = hasId3V1(mediaFile);
 
-			else {
-				fseek(mediaFile, 0, SEEK_END);
-			}
-
-			if(options.verbose || options.forced)						/* Manual change of the name */
-			{
-				if(options.verbose)
-					printf("%s hasen't got a id3 tag. \n",*argv);
-				else
-					printf("%s:\n",*argv);
-				if(!options.all)
-				{
-					for(int i=0 ; i!=(strlen(filenamelook)) ; i++)
-					{
-						position = 0;
-						if(filenamelook[i] == '&')
-						{
-							switch(filenamelook[i+1])
-							{
-								case 'a':
-									printf("Please enter the artist's name.\n");
-									do	/* Lets get the artist */
-									{
-										input_char = getchar();
-										if (input_char != '\n' && position == 0)
-											strcpy(artist,"");
-										if (input_char != '\n' && input_char != EOF )
-											sprintf(artist,"%s%c",artist,input_char);
-										position++;
-									} while (input_char != '\n');
-									i++;
-									break;
-
-								case 't':
-									printf("Please enter the title.\n");
-									do	/* Lets get the song title */
-									{
-										input_char = getchar();
-										if (input_char != '\n' && position == 0)
-											strcpy(title,"");
-										if (input_char != '\n' && input_char != EOF)
-											sprintf(title,"%s%c",title,input_char);
-										position++;
-									} while (input_char != '\n');
-									i++;
-									break;
-
-								case 'b':
-									printf("Please enter the album.\n");
-									do	/* Lets get the album */
-									{
-										input_char = getchar();
-										if (input_char != '\n' && position == 0)
-											strcpy(album,"");
-										if (input_char != '\n' && input_char != EOF)
-											sprintf(album,"%s%c",album,input_char);
-										position++;
-									} while (input_char != '\n');
-									i++;
-									break;
-
-								case 'y':
-									printf("Please enter the year.\n");
-									do	/* Lets get the year */
-									{
-										input_char = getchar();
-										if (input_char != '\n' && position == 0)
-											strcpy(year,"");
-										if (input_char != '\n' && input_char != EOF)
-											sprintf(year,"%s%c",year,input_char);
-										position++;
-									} while (input_char != '\n');
-									i++;
-									break;
-
-								default: /* the user has entered a character behind the & we don't know */
-									printf("Illegal char in config file please use the option '-s help' for more information");
-									exit(1);
-							}
-						}
-					}
-				}
-				else
-				{
-					position = 0;
-					printf("Please enter the artist's name.\n");
-					do	/* Lets get the artist */
-					{
-						input_char = getchar();
-						if (input_char != '\n' && position == 0)
-							strcpy(artist,"");
-						if (input_char != '\n' && input_char != EOF )
-							sprintf(artist,"%s%c",artist,input_char);
-						position++;
-					} while (input_char != '\n');
-
-					position = 0;
-					printf("Please enter the title.\n");
-					do	/* Lets get the song title */
-					{
-						input_char = getchar();
-						if (input_char != '\n' && position == 0)
-							strcpy(title,"");
-						if (input_char != '\n' && input_char != EOF)
-							sprintf(title,"%s%c",title,input_char);
-						position++;
-					} while (input_char != '\n');
-
-					position = 0;
-					printf("Please enter the album.\n");
-					do	/* Lets get the album */
-					{
-						input_char = getchar();
-						if (input_char != '\n' && position == 0)
-							strcpy(album,"");
-						if (input_char != '\n' && input_char != EOF)
-							sprintf(album,"%s%c",album,input_char);
-						position++;
-					} while (input_char != '\n');
-
-					position = 0;
-					printf("Please enter the year.\n");
-					do	/* Lets get the year */
-					{
-						input_char = getchar();
-						if (input_char != '\n' && position == 0)
-							strcpy(year,"");
-						if (input_char != '\n' && input_char != EOF)
-							sprintf(year,"%s%c",year,input_char);
-						position++;
-					} while (input_char != '\n');
-				}
-			}
-			else	 /* If we aren't in verbose or forced mode */
-			{
+		// If file cannot be handled, move on to next file
+		if (!(containsId3V1 || options.forced || options.verbose)) {
 				printf("%s hasen't got a id3 tag\n",*argv);
 				fclose(mediaFile);
 				++argv;
 				continue;
+		}
+
+		// If existing tags were found, read them in and set offset accordingly
+		if (containsId3V1) {
+			convertId3V1ToMediaTags(&mediaTags, mediaFile);
+		}
+
+		// If manual input was requested, time to ask for input!
+		if (options.forced || (options.verbose && !containsId3V1)) {
+			if(options.verbose)
+				printf("%s hasen't got a id3 tag. \n",*argv);
+			else
+				printf("%s:\n",*argv);
+			if(!options.all)
+			{
+				for(int i=0 ; i!=(strlen(filenamelook)) ; i++)
+				{
+					position = 0;
+					if(filenamelook[i] == '&')
+					{
+						switch(filenamelook[i+1])
+						{
+							case 'a':
+								printf("Please enter the artist's name.\n");
+								do	/* Lets get the artist */
+								{
+									input_char = getchar();
+									if (input_char != '\n' && position == 0)
+										strcpy(mediaTags.artist,"");
+									if (input_char != '\n' && input_char != EOF )
+										sprintf(mediaTags.artist,"%s%c",mediaTags.artist,input_char);
+									position++;
+								} while (input_char != '\n');
+								i++;
+								break;
+
+							case 't':
+								printf("Please enter the title.\n");
+								do	/* Lets get the song title */
+								{
+									input_char = getchar();
+									if (input_char != '\n' && position == 0)
+										strcpy(mediaTags.title,"");
+									if (input_char != '\n' && input_char != EOF)
+										sprintf(mediaTags.title,"%s%c",mediaTags.title,input_char);
+									position++;
+								} while (input_char != '\n');
+								i++;
+								break;
+
+							case 'b':
+								printf("Please enter the album.\n");
+								do	/* Lets get the album */
+								{
+									input_char = getchar();
+									if (input_char != '\n' && position == 0)
+										strcpy(mediaTags.album,"");
+									if (input_char != '\n' && input_char != EOF)
+										sprintf(mediaTags.album,"%s%c",mediaTags.album,input_char);
+									position++;
+								} while (input_char != '\n');
+								i++;
+								break;
+
+							case 'y':
+								printf("Please enter the year.\n");
+								do	/* Lets get the year */
+								{
+									input_char = getchar();
+									if (input_char != '\n' && position == 0)
+										strcpy(mediaTags.year,"");
+									if (input_char != '\n' && input_char != EOF)
+										sprintf(mediaTags.year,"%s%c",mediaTags.year,input_char);
+									position++;
+								} while (input_char != '\n');
+								i++;
+								break;
+
+							default: /* the user has entered a character behind the & we don't know */
+								printf("Illegal char in config file please use the option '-s help' for more information");
+								exit(1);
+						}
+					}
+				}
+			}
+			else
+			{
+				position = 0;
+				printf("Please enter the artist's name.\n");
+				do	/* Lets get the artist */
+				{
+					input_char = getchar();
+					if (input_char != '\n' && position == 0)
+						strcpy(mediaTags.artist,"");
+					if (input_char != '\n' && input_char != EOF )
+						sprintf(mediaTags.artist,"%s%c",mediaTags.artist,input_char);
+					position++;
+				} while (input_char != '\n');
+
+				position = 0;
+				printf("Please enter the title.\n");
+				do	/* Lets get the song title */
+				{
+					input_char = getchar();
+					if (input_char != '\n' && position == 0)
+						strcpy(mediaTags.title,"");
+					if (input_char != '\n' && input_char != EOF)
+						sprintf(mediaTags.title,"%s%c",mediaTags.title,input_char);
+					position++;
+				} while (input_char != '\n');
+
+				position = 0;
+				printf("Please enter the album.\n");
+				do	/* Lets get the album */
+				{
+					input_char = getchar();
+					if (input_char != '\n' && position == 0)
+						strcpy(mediaTags.album,"");
+					if (input_char != '\n' && input_char != EOF)
+						sprintf(mediaTags.album,"%s%c",mediaTags.album,input_char);
+					position++;
+				} while (input_char != '\n');
+
+				position = 0;
+				printf("Please enter the year.\n");
+				do	/* Lets get the year */
+				{
+					input_char = getchar();
+					if (input_char != '\n' && position == 0)
+						strcpy(mediaTags.year,"");
+					if (input_char != '\n' && input_char != EOF)
+						sprintf(mediaTags.year,"%s%c",mediaTags.year,input_char);
+					position++;
+				} while (input_char != '\n');
 			}
 		}
 
 		if(options.info)
 		{
-			printf("Artist : %s\n",artist);
-			printf("Title : %s\n",title);
-			printf("Album : %s\n",album);
-			printf("Year : %s\n\n",year);
+			printf("Artist : %s\n",mediaTags.artist);
+			printf("Title : %s\n",mediaTags.title);
+			printf("Album : %s\n",mediaTags.album);
+			printf("Year : %s\n\n",mediaTags.year);
 			++argv;
 			continue;
 		}
 
 		/* Remove trailing spaces */
 		int i;
-		i=strlen(artist)-1;
-		while (i && artist[i]==' ')
+		i=strlen(mediaTags.artist)-1;
+		while (i && mediaTags.artist[i]==' ')
 		{
-			artist[i]='\0';
+			mediaTags.artist[i]='\0';
 			i--;
 		}
 
-		i=strlen(title)-1;
-		while (i && title[i]==' ')
+		i=strlen(mediaTags.title)-1;
+		while (i && mediaTags.title[i]==' ')
 		{
-			title[i]='\0';
+			mediaTags.title[i]='\0';
 			i--;
 		}
-		i=strlen(album)-1;
-		while (i && album[i]==' ')
+		i=strlen(mediaTags.album)-1;
+		while (i && mediaTags.album[i]==' ')
 		{
-			album[i]='\0';
+			mediaTags.album[i]='\0';
 			i--;
 		}
-		i=strlen(year)-1;
-		while (i && year[i]==' ')
+		i=strlen(mediaTags.year)-1;
+		while (i && mediaTags.year[i]==' ')
 		{
-			year[i]='\0';
+			mediaTags.year[i]='\0';
 			i--;
 		}
 
@@ -356,25 +325,25 @@ int main(int argc, char *argv[])
 				switch(filenamelook[i+1])
 				{
 					case 'a':
-						sprintf(tmp,"%s%s",newfilename,artist);
+						sprintf(tmp,"%s%s",newfilename,mediaTags.artist);
 						strcpy(newfilename,tmp);
 						i++;
 						break;
 
 					case 't':
-						sprintf(tmp,"%s%s",newfilename,title);
+						sprintf(tmp,"%s%s",newfilename,mediaTags.title);
 						strcpy(newfilename,tmp);
 						i++;
 						break;
 
 					case 'b':
-						sprintf(tmp,"%s%s",newfilename,album);
+						sprintf(tmp,"%s%s",newfilename,mediaTags.album);
 						strcpy(newfilename,tmp);
 						i++;
 						break;
 
 					case 'y':
-						sprintf(tmp,"%s%s",newfilename,year);
+						sprintf(tmp,"%s%s",newfilename,mediaTags.year);
 						strcpy(newfilename,tmp);
 						i++;
 						break;
@@ -397,10 +366,7 @@ int main(int argc, char *argv[])
 		dirFromPath(dir, dirSize, *argv);
 
 		/* Build the new tag from the new names */
-
-		buildtag(fullline,title,artist,album,year,comment,genre);
-		fwrite(fullline,1,128,mediaFile);
-
+		mediaTags.applyTag(mediaFile, mediaTags);	// TODO: handle error cases. Possibly abort execution?
 		fclose(mediaFile);
 
 		/* Lets catch illegal characters */
@@ -642,12 +608,13 @@ bool isMp3File(FILE *media){
 }
 
 
-/** TAG CONVERSION FUNCTIONS **/
+/** TAG CONVERSION **/
 
 static const char ID3_V1_HEADER[]		= "TAG";
 static const char ID3_ENHANCED_HEADER[]	= "TAG+";
 static const char ID3_V1_2_HEADER[]		= "EXT";
 
+static const size_t ID3_V1_SIZE = 128;
 static const ssize_t ID3_V1_HEADER_OFFSET = -128;
 
 static const size_t ID3_V1_HEADER_SIZE = 3;
@@ -686,11 +653,9 @@ bool hasId3V1(FILE *media) {
  */
 int convertId3V1ToMediaTags(MediaTags *mediaTags, FILE *media) {
 	int status = 0;
-	if ((status = fseek(media, ID3_V1_HEADER_OFFSET, SEEK_END))) {
+	if ((status = fseek(media, ID3_V1_HEADER_OFFSET + ID3_V1_HEADER_SIZE, SEEK_END))) {
 		return status;
 	}
-
-	fread(NULL, sizeof(char), ID3_V1_HEADER_SIZE, media);
 
 	fread(mediaTags->title, sizeof(char), ID3_V1_TITLE_SIZE, media);
 	mediaTags->title[ID3_V1_TITLE_SIZE] = '\0';
@@ -712,27 +677,35 @@ int convertId3V1ToMediaTags(MediaTags *mediaTags, FILE *media) {
 
 	// Check for presence of a track number. If comment[28] is 0x00, then comment[29] represents a track number
 	if (mediaTags->comment[28] == '\x00') {
-		mediaTags->comment[28] = '\0';	// probably unnecessary, but Idk if '\0' is guaranteed to be 0x00
+		//mediaTags->comment[28] = '\0';	// probably unnecessary, but Idk if '\0' is guaranteed to be 0x00
 		long int track = strtol(&(mediaTags->comment[29]), NULL, 16);
 		sprintf(mediaTags->track, "%ld", track);
 	}
+
+	mediaTags->tagSize = ID3_V1_HEADER_OFFSET;
+	mediaTags->applyTag = &setIdV3TagsInFile;
 
 	return status;
 }
 
 
-/** @brief Inserts data from a MediaTags struct into an array representing a media file.
- * Caller should use "tagSize" member of struct to correctly size the output buffer.
- * If output buffer is too small, no output is generated.
+/** @brief Inserts data from a MediaTags struct into the provided media file.
  *
- * @param output Buffer to output the tagged media contents into
- * @param outSize Size of the output buffer.
- * @param media Buffer to read the media contents from
- * @param inSize Size of the input buffer
+ * @param media Stream of the file to update
  * @param mediaTags MediaTags struct to read tag data from
- * @return The size of the generated output, not including the null terminator, or 0 if output could not be generated.
+ * @return 0 if completed successfully, non-zero otherwise.
  *
  */
-size_t setIdV3TagsInFile(char *output, size_t outSize, char *media, size_t inSize, MediaTags mediaTags) {
-	return 0;
+int setIdV3TagsInFile(FILE *media, MediaTags mediaTags) {
+	ssize_t tagOffset = 0;
+	if (hasId3V1(media)) {
+		tagOffset = ID3_V1_HEADER_OFFSET;
+	}
+	fseek(media, tagOffset, SEEK_END);
+
+	char fullline[228]="";
+	buildtag(fullline,mediaTags.title,mediaTags.artist,mediaTags.album,mediaTags.year,mediaTags.comment,mediaTags.genre);
+	fwrite(fullline, sizeof(fullline[0]), ID3_V1_SIZE, media);
+
+	return 1;
 }

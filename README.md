@@ -39,6 +39,7 @@ Todo:
 * Move parsing of IDE3 V1 tags to its own file
 * Add capability for detecting different metadata tag types
 * Create a more modular and extensible format character system
+* Introduce unit testing to make verifying functionality easier
 
 
 Known bugs:
