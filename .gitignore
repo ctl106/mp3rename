@@ -1,5 +1,6 @@
 // IDE project files
 *.cbp
+*.depend
 
 // Compilation directories
 bin/*

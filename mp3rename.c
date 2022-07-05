@@ -1,10 +1,11 @@
 /**
  * @file mp3rename.c
+ * @brief Rename mp3 files based on id3tags.
  *
- * Sander Janssen			<janssen@rendo.dekooi.nl>
+ * @author Sander Janssen			<janssen@rendo.dekooi.nl>
  *
  * This software is covered by the GNU public license,
- * which should be in a file named LICENSE acompanying
+ * which should be in a file named LICENSE.md acompanying
  * this.
  *
  */
@@ -17,32 +18,9 @@
 #include <string.h>
 #include <signal.h>
 
-// should be set to contain the largest field of any tag type +1 to null terminate
-#define TITLE_MAX_LENGTH	61
-#define ARTIST_MAX_LENGTH	61
-#define ALBUM_MAX_LENGTH	61
-#define YEAR_MAX_LENGTH		5
-#define COMMENT_MAX_LENGTH	44
-#define TRACK_MAX_LENGTH	3
-#define GENRE_MAX_LENGTH	31
-#define SUBGENRE_MAX_LENGTH	21
+#include "mediaTags.h"
+#include "id3v1lib.h"
 
-typedef struct MediaTags {
-	char title[TITLE_MAX_LENGTH];
-	char artist[ARTIST_MAX_LENGTH];
-	char album[ALBUM_MAX_LENGTH];
-	char year[YEAR_MAX_LENGTH];
-	char comment[COMMENT_MAX_LENGTH];
-	char track[TRACK_MAX_LENGTH];
-	char genre[GENRE_MAX_LENGTH];
-	char subgenre[SUBGENRE_MAX_LENGTH];
-
-	// The size of the tag when applied to a media file.
-	size_t tagSize;
-
-	// Callback function for applying the tag to media.
-	int (*applyTag)(FILE *media, struct MediaTags mediaTags);
-} MediaTags;
 
 #define OPTIONS_INITIALIZER	{.verbose = false, .forced = false, .burn = false, .info = false, .all = false}
 typedef struct Options {
@@ -57,16 +35,10 @@ typedef struct Options {
 int parseArguments(Options *options, int argc, char *argv[]);
 void verifyOptions(Options options);
 
-void pad(char *string, int length);
 void display_help();
-void buildtag(char *buf, char *title, char *artist, char *album, char *year, char *comment, char *genre);
 void set_filename(int argc,char *argv[]);
 size_t dirFromPath(char *directory, size_t n, char *fullPath);
 bool isMp3File(FILE *media);
-
-bool hasId3V1(FILE *media);
-int convertId3V1ToMediaTags(MediaTags *mediaTags, FILE *media);
-int setIdV3TagsInFile(FILE *media, MediaTags mediaTags);
 
 
 int main(int argc, char *argv[])
@@ -473,38 +445,6 @@ void verifyOptions(Options options) {
 	}
 }
 
-
-void buildtag(char *buf, char *title, char *artist, char *album, char *year, char *comment, char *genre)
-{
-
-	strcpy(buf,"TAG");
-	pad(title,30);
-	strncat(buf,title,30);
-	pad(artist,30);
-	strncat(buf,artist,30);
-	pad(album,30);
-	strncat(buf,album,30);
-	pad(year,4);
-	strncat(buf,year,4);
-	pad(comment,30);
-	strncat(buf,comment,30);
-	strncat(buf,genre,1);
-}
-
-void pad(char *string, int length)
-{
-	int i;
-
-	i=strlen(string);
-	while(i<length)
-	{
-		string[i] = ' ';
-		i++;
-	}
-
-	string[i]='\0';
-}
-
 void display_help()
 {
 	printf("Mp3rename 0.6\n\n");
@@ -605,107 +545,4 @@ bool isMp3File(FILE *media){
 	sig[0] &= 0xff;
 	sig[1] &= 0xf0;
 	return (sig[0] == 0xff) && (sig[1] == 0xf0);
-}
-
-
-/** TAG CONVERSION **/
-
-static const char ID3_V1_HEADER[]		= "TAG";
-static const char ID3_ENHANCED_HEADER[]	= "TAG+";
-static const char ID3_V1_2_HEADER[]		= "EXT";
-
-static const size_t ID3_V1_SIZE = 128;
-static const ssize_t ID3_V1_HEADER_OFFSET = -128;
-
-static const size_t ID3_V1_HEADER_SIZE = 3;
-static const size_t ID3_V1_TITLE_SIZE = 30;
-static const size_t ID3_V1_ARTIST_SIZE = 30;
-static const size_t ID3_V1_ALBUM_SIZE = 30;
-static const size_t ID3_V1_YEAR_SIZE = 4;
-static const size_t ID3_V1_COMMENT_SIZE = 30;
-static const size_t ID3_V1_GENRE_SIZE = 1;
-
-
-/** @brief Checks if the provided char array contains an ID3 V1 tag.
- *
- * @param media The file to search for the tag in
- * @return true if an ID3 V1 header was found, false otherwise
- *
- */
-bool hasId3V1(FILE *media) {
-	if (fseek(media, ID3_V1_HEADER_OFFSET, SEEK_END)) {
-		return false;
-	}
-
-	char readHeader[ID3_V1_HEADER_SIZE];
-	fread(readHeader, sizeof(char), ID3_V1_HEADER_SIZE, media);
-
-	return 0 == strncmp(ID3_V1_HEADER, readHeader, sizeof(ID3_V1_HEADER));
-}
-
-
-/** @brief Populates a MediaTags struct from the contents of a media file.
- *
- * @param mediaTags Pointer to the MediaTags struct to populate
- * @param media The file to pull the tag data from
- * @return 0 if completed successfully, else non-zero
- *
- */
-int convertId3V1ToMediaTags(MediaTags *mediaTags, FILE *media) {
-	int status = 0;
-	if ((status = fseek(media, ID3_V1_HEADER_OFFSET + ID3_V1_HEADER_SIZE, SEEK_END))) {
-		return status;
-	}
-
-	fread(mediaTags->title, sizeof(char), ID3_V1_TITLE_SIZE, media);
-	mediaTags->title[ID3_V1_TITLE_SIZE] = '\0';
-
-	fread(mediaTags->artist, sizeof(char), ID3_V1_ARTIST_SIZE, media);
-	mediaTags->artist[ID3_V1_ARTIST_SIZE] = '\0';
-
-	fread(mediaTags->album, sizeof(char), ID3_V1_ALBUM_SIZE, media);
-	mediaTags->album[ID3_V1_ALBUM_SIZE] = '\0';
-
-	fread(mediaTags->year, sizeof(char), ID3_V1_YEAR_SIZE, media);
-	mediaTags->year[ID3_V1_YEAR_SIZE] = '\0';
-
-	fread(mediaTags->comment, sizeof(char), ID3_V1_COMMENT_SIZE, media);
-	mediaTags->comment[ID3_V1_COMMENT_SIZE] = '\0';
-
-	fread(mediaTags->genre, sizeof(char), ID3_V1_GENRE_SIZE, media);
-	mediaTags->genre[ID3_V1_GENRE_SIZE] = '\0';
-
-	// Check for presence of a track number. If comment[28] is 0x00, then comment[29] represents a track number
-	if (mediaTags->comment[28] == '\x00') {
-		//mediaTags->comment[28] = '\0';	// probably unnecessary, but Idk if '\0' is guaranteed to be 0x00
-		long int track = strtol(&(mediaTags->comment[29]), NULL, 16);
-		sprintf(mediaTags->track, "%ld", track);
-	}
-
-	mediaTags->tagSize = ID3_V1_HEADER_OFFSET;
-	mediaTags->applyTag = &setIdV3TagsInFile;
-
-	return status;
-}
-
-
-/** @brief Inserts data from a MediaTags struct into the provided media file.
- *
- * @param media Stream of the file to update
- * @param mediaTags MediaTags struct to read tag data from
- * @return 0 if completed successfully, non-zero otherwise.
- *
- */
-int setIdV3TagsInFile(FILE *media, MediaTags mediaTags) {
-	ssize_t tagOffset = 0;
-	if (hasId3V1(media)) {
-		tagOffset = ID3_V1_HEADER_OFFSET;
-	}
-	fseek(media, tagOffset, SEEK_END);
-
-	char fullline[228]="";
-	buildtag(fullline,mediaTags.title,mediaTags.artist,mediaTags.album,mediaTags.year,mediaTags.comment,mediaTags.genre);
-	fwrite(fullline, sizeof(fullline[0]), ID3_V1_SIZE, media);
-
-	return 1;
 }
