@@ -21,6 +21,9 @@
 #include "mediaTags.h"
 #include "id3v1lib.h"
 
+#define BURNSIZE_MAX	32		// Limit filenames to this size if burn is enabled
+#define _MP3			".mp3"	// MP3 file extension
+
 
 #define OPTIONS_INITIALIZER	{.verbose = false, .forced = false, .burn = false, .info = false, .all = false}
 typedef struct Options {
@@ -82,9 +85,8 @@ int main(int argc, char *argv[])
 		strcat(filenamelook,".mp3"); /* add .mp3 so that the filename will be complete */
 
 	do {
-		//char title[31]="", artist[31]="", album[31]="", year[5]="", comment[31]="", genre[1];
-		char newfilename[160]="", newFilePath[150]="", dir[150]="";
-		char burnname[29]="";
+		char newfilename[FILENAME_MAX]="", newFilePath[FILENAME_MAX]="", dir[FILENAME_MAX]="";
+		char burnname[BURNSIZE_MAX + 1]="";
 
 		if ( !( mediaFile=fopen(*argv,"rb+") ) )		/* If the file doesn exist */
 		{
@@ -289,47 +291,44 @@ int main(int argc, char *argv[])
 
 		/* We go through the filenamelook until we find a &x combination
 			 then we replace the &x with album/title/year/artis						*/
-		for(int i=0 ; i!=(strlen(filenamelook)) ; i++)
+		for(int i = 0 ; i < (strlen(filenamelook)) ; i++)
 		{
 			if(filenamelook[i] == '&')
 			{
-				char tmp[100];
+				char tmp[160];
+				char *tag;
 				switch(filenamelook[i+1])
 				{
 					case 'a':
-						sprintf(tmp,"%s%s",newfilename,mediaTags.artist);
-						strcpy(newfilename,tmp);
-						i++;
+						tag = mediaTags.artist;
 						break;
 
 					case 't':
-						sprintf(tmp,"%s%s",newfilename,mediaTags.title);
-						strcpy(newfilename,tmp);
-						i++;
+						tag = mediaTags.title;
 						break;
 
 					case 'b':
-						sprintf(tmp,"%s%s",newfilename,mediaTags.album);
-						strcpy(newfilename,tmp);
-						i++;
+						tag = mediaTags.album;
 						break;
 
 					case 'y':
-						sprintf(tmp,"%s%s",newfilename,mediaTags.year);
-						strcpy(newfilename,tmp);
-						i++;
+						tag = mediaTags.year;
 						break;
 
 					default:
 						printf("Illegal char in config file please use the option '-s help' for more information\n");
 						exit(1);
 				}
+				strncat(newfilename, tag, FILENAME_MAX - 1);
+				i++;
 			}
 			else /* otherwise we just print the character in the filenamelook in the newfilename */
 			{
-				char tmp[100];
-				sprintf(tmp,"%s%c",newfilename,filenamelook[i]);
-				strcpy(newfilename,tmp);
+				strncat(
+					newfilename,
+					&filenamelook[i],
+					((strlen(newfilename) + 1) < FILENAME_MAX ) ? 1 : 0
+				);
 			}
 		}
 
@@ -371,13 +370,13 @@ int main(int argc, char *argv[])
 		/* Lets rename the file */
 		if(options.burn) /* If burn is on the size */
 		{					/* shouldn't be bigger than 32 chars including the .mp3 */
-			strncpy(burnname,newfilename,sizeof(burnname)-1);
-			sprintf(newFilePath,"%s%s.mp3",dir,burnname);
+			newfilename[BURNSIZE_MAX - sizeof(_MP3)] = '\0';
 		}
-		else
-		{
-			sprintf(newFilePath,"%s%s",dir,newfilename);
-		}
+
+		strncpy(newFilePath, dir, FILENAME_MAX);
+		strncat(newFilePath, newfilename, FILENAME_MAX - strlen(newFilePath) - 1);
+		strncat(newFilePath, _MP3, FILENAME_MAX - strlen(newFilePath) - 1);
+
 		if(rename(*argv,newFilePath))
 			printf("Error renaming %s\n",*argv);
 
@@ -460,6 +459,7 @@ void display_help()
 	printf("Sander Janssen <janssen@rendo.dekooi.nl>\n\n");
 
 }
+
 void set_filename(int argc,char *argv[])
 {
 	FILE *fp;
@@ -498,7 +498,7 @@ void set_filename(int argc,char *argv[])
 	}
 	printf("Default is now set\n\n");
 
-	fprintf(fp,*argv);
+	fputs(*argv, fp);
 	fclose(fp);
 }
 
