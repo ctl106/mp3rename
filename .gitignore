@@ -8,8 +8,9 @@
 bin/*
 obj/*
 
-// Other automatically generated directories
-doxygen/*
+// Automatically generated files and directories
+doxygen/*/
+doxygen/*.log
 
 // Binary files
 *.o

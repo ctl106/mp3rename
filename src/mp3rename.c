@@ -26,6 +26,10 @@
 
 
 #define OPTIONS_INITIALIZER	{.verbose = false, .forced = false, .burn = false, .info = false, .all = false}
+/**
+ * @brief Struct containing settings for mp3rename's execution
+ * 
+ */
 typedef struct Options {
 	bool verbose;
 	bool forced;

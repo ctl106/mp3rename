@@ -4,12 +4,18 @@ SRCDIR = src
 OBJDIR = obj
 BINDIR = bin
 
+DOXDIR = doxygen
+DOXINDEX = $(DOXDIR)/html/index.html
+DOXCONFIG = $(DOXDIR)/doxyfile
+
+
 BINARY = $(BINDIR)/$(NAME)
 HEADERS = $(wildcard $(SRCDIR)/*.h)
 SOURCES = $(wildcard $(SRCDIR)/*.c)
 OBJECTS = $(patsubst $(SRCDIR)/%.c, $(OBJDIR)/%.o, $(SOURCES))
 
 MKDIR = /usr/bin/mkdir
+DOXYGEN = /usr/bin/doxygen
 
 .PHONY: setup
 setup:
@@ -34,8 +40,11 @@ $(BINARY):
 clean:
 	$(RM) -f $(OBJECTS) $(BINARY) *~ *core
 
-.PHONU: install
+.PHONY: install
 install:
 	$(INSTALL) -c $(BINARY) $(PREFIX)/bin/$(NAME)
 	$(INSTALL) -c $(BINARY).1.gz $(PREFIX)/man/man1/
     
+.PHONY: docs
+docs: $(SRCDIR)
+	export OUTPUT_DIRECTORY=$(DOXDIR); $(DOXYGEN) $(DOXCONFIG)
